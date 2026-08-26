@@ -1,4 +1,4 @@
-# Jio Gemini Activation Scanner
+# Jio-Gemini-Activation-Scanner
 
 Automated scanner for Jio Gemini (Google AI) activation links using exposed Firebase Realtime Database panels and Jio's public APIs.
 
