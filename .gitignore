@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+gemini_activation_links.txt
+gemini_results.csv
+panels.txt
+.DS_Store
+Thumbs.db
