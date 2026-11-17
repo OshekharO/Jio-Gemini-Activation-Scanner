@@ -1,8 +1,8 @@
-__pycache__/
-*.pyc
-*.pyo
+# runtime outputs
 gemini_activation_links.txt
 gemini_results.csv
-panels.txt
-.DS_Store
-Thumbs.db
+seen_numbers.txt
+run*.log
+scratch/
+__pycache__/
+*.pyc

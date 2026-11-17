@@ -1,0 +1,14 @@
+# Seed panels — hand-picked, verified reachable at least once.
+# discovery.py also merges upstream lists + forks, so this file only needs
+# a few survivors. format: url|api_key
+https://challan-758d1-default-rtdb.asia-southeast1.firebasedatabase.app
+https://godpanel-203f8-default-rtdb.asia-southeast1.firebasedatabase.app
+https://hdhdusgsvshshshs-default-rtdb.firebaseio.com
+https://master89812-b77a6-default-rtdb.firebaseio.com
+https://max-a-cbe29-default-rtdb.firebaseio.com
+https://pm-kisan-22hg-default-rtdb.firebaseio.com|AIzaSyCbT2cHC05tINJ3aOku1URGlAzWTG1IS1E
+https://pm-kishan-25-58b3c-default-rtdb.firebaseio.com|AIzaSyA51lq8IG509h32yHtzaWWWzdyZNqemUkc
+https://pmnr1newad-default-rtdb.firebaseio.com
+https://rtx-c9-default-rtdb.asia-southeast1.firebasedatabase.app
+https://rupesh-6c5e5-default-rtdb.firebaseio.com|AizAsyAFML11FrkfFMx0c4hOYqaCKUNVj5f8XhA
+https://sallu-9934f-default-rtdb.firebaseio.com
