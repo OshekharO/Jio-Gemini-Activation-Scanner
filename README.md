@@ -84,6 +84,32 @@ python Jio.py --max-numbers 3 --otp-timeout 120
 Outputs: `gemini_activation_links.txt`, `gemini_results.csv`,
 `seen_numbers.txt` (cross-run dedupe), `panel_cache.json`.
 
+## Has the offer closed? (yes, for new claims)
+
+Live state as of 2026-11-17, and it explains why a successful login still ends in
+`google_ai_unauthorized` rather than a link:
+
+| evidence | result |
+|---|---|
+| Jio T&C page | "The Google Gemini Offer Is No Longer Available" (window ran 30 Oct 2025 – 29 Oct 2026) |
+| `GET /ott/subscription/activate/Z0258_LITE` (Canva, on the same session) | 200 `SUCCESS` |
+| `GET /ott/subscription/activate/Z0241?source=JIO` (Gemini) | **401 `Not Authorized`** |
+| `GET /ott/subscription/google-ai` | **401 `Not Authorized`** |
+| `GET /ott/subscription/google-lead` | 200 `LEAD_GENERATED` |
+| `GET /ott/subscription/submit?type=Z0241&source=JIO` | 200 `SUCCESS` |
+| `https://selfcare/googleai/...` and `tiny.jio.com/loginrecharge` | 403 / redirects to `page-not-found` |
+
+So the remaining endpoints happily accept the request, only the two that mint the
+Google token refuse it. The scanner now reports that as its own status,
+`google_ai_unauthorized`, instead of a vague `activation_api_failed` — it is an
+entitlement gate on Jio's side, and a code change cannot lift it. If the offer is
+ever reopened, the same code path will produce links again.
+
+`plan_hint` in the CSV adds eligibility context read from the panel's own SMS
+(`active` / `expiring` / `expired`, newest message wins): an expired plan breaks
+the offer's "maintain a qualifying recharge" condition, so it is worth recharging
+a promising number before spending attempts on it.
+
 ## Reality check on the Jio side
 
 The carrier API is the flaky half, not the Firebase half:

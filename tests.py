@@ -272,6 +272,15 @@ def test_claim_activation() -> None:
     check_true("every activation endpoint tried",
                {u for _m, u in session.calls} >= set(Jio.ACTIVATE_ATTEMPTS))
 
+    # entitlement gate: lead 200 + link endpoint 401
+    lead = Jio.ACTIVATE_ATTEMPTS[0]
+    session = FakeSession({lead: (200, '{"errorCode":"200","errorMessage":"LEAD_GENERATED"}'),
+                           Jio.ACTIVATE_ATTEMPTS[1]: (200, "{}"),
+                           Jio.ACTIVATE_ATTEMPTS[2]: (401, '{"errorMessage":"Not Authorized"}'),
+                           Jio.ACTIVATE_ATTEMPTS[3]: (401, '{"errorMessage":"Not Authorized"}')})
+    check("entitlement 401 has its own status", Jio.claim_activation(session)[0],
+          "google_ai_unauthorized")
+
     # unbound session short-circuits before hitting the offer endpoints
     session = FakeSession({}, navigate_status=401)
     check("unbound session reported", Jio.claim_activation(session)[0],
@@ -313,6 +322,46 @@ def test_result_rows() -> None:
     Jio.RESULTS_FILE, Jio.LINKS_FILE, Jio.SEEN_FILE = saved
 
 
+def test_plan_state() -> None:
+    print("plan-state hint")
+    fresh = time.time() * 1000
+    expired = [("a", {"message": "आपका Jio नंबर 7225820244 का प्लान समाप्त हो गया है",
+                      "timestamp": fresh})]
+    check("hindi expiry detected", Jio.plan_state(expired, "7225820244"), "expired")
+
+    latin = [("a", {"message": "Your plan for Jio number 9898470409 is expiring tomorrow",
+                    "timestamp": fresh})]
+    check("expiring detected", Jio.plan_state(latin, "9898470409"), "expiring")
+
+    active = [("a", {"message": "Recharge of Rs.349 successful for 9104450688",
+                     "timestamp": fresh})]
+    check("active detected", Jio.plan_state(active, "9104450688"), "active")
+
+    other = [("a", {"message": "Your plan for Jio number 9999999999 expired",
+                    "timestamp": fresh})]
+    check("other number ignored", Jio.plan_state(other, "9104450688"), "unknown")
+
+    # the newest message wins: an expiry notice followed by a successful recharge
+    seq = [("a", {"message": "Your plan for Jio number 9898470409 is expiring today. Recharge IMMEDIATELY",
+                  "timestamp": fresh - 3600_000}),
+           ("b", {"message": "रिचार्ज सफळ! plan 349 Jio number 9898470409",
+                  "timestamp": fresh})]
+    check("newest message wins", Jio.plan_state(seq, "9898470409"), "active")
+    check("order independent", Jio.plan_state(list(reversed(seq)), "9898470409"), "active")
+    check("unattributed needs the flag",
+          Jio.plan_state([("a", {"message": "Plan expired, recharge now", "timestamp": fresh})],
+                         "9104450688"), "unknown")
+    check("unattributed allowed on single-candidate devices",
+          Jio.plan_state([("a", {"message": "Plan expired, recharge now", "timestamp": fresh})],
+                         "9104450688", allow_unattributed=True), "expired")
+
+    old = [("a", {"message": "Jio number 9104450688 plan expired",
+                  "timestamp": fresh - 60 * 86400_000})]
+    check("stale message ignored", Jio.plan_state(old, "9104450688"), "unknown")
+    check("empty items", Jio.plan_state([], "9104450688"), "unknown")
+    check_true("qualifying pack matched", Jio.QUALIFYING_PLAN_RE.search("Rs.349 plan") is not None)
+
+
 def test_runtime_config() -> None:
     print("runtime config")
     check("output paths are script-relative",
@@ -342,6 +391,7 @@ def main() -> int:
         test_bind_session,
         test_claim_activation,
         test_result_rows,
+        test_plan_state,
         test_runtime_config,
     ):
         test()
