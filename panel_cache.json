@@ -1,8 +1,8 @@
 {
- "ts": 1794925893.1737134,
+ "ts": 1794933571.462528,
  "stats": {
   "harvested": 982,
-  "probed": 982,
+  "probed": 8,
   "live": 8
  },
  "panels": [
@@ -12,7 +12,7 @@
    "schema": "action",
    "clients": 44,
    "online": 0,
-   "probed_at": 1794925502.4050949
+   "probed_at": 1794933571.4579844
   },
   {
    "url": "https://pmnr1newad-default-rtdb.firebaseio.com",
@@ -20,7 +20,7 @@
    "schema": "action",
    "clients": 39,
    "online": 0,
-   "probed_at": 1794925502.0270045
+   "probed_at": 1794933571.106453
   },
   {
    "url": "https://rtx-c9-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -28,7 +28,7 @@
    "schema": "action",
    "clients": 6,
    "online": 0,
-   "probed_at": 1794925502.2093449
+   "probed_at": 1794933571.2819588
   },
   {
    "url": "https://pm-kishan-25-58b3c-default-rtdb.firebaseio.com",
@@ -36,7 +36,7 @@
    "schema": "action",
    "clients": 5,
    "online": 0,
-   "probed_at": 1794925502.037295
+   "probed_at": 1794933571.0709715
   },
   {
    "url": "https://mychatwp.firebaseio.com",
@@ -44,7 +44,7 @@
    "schema": "command",
    "clients": 4,
    "online": 0,
-   "probed_at": 1794925585.4619148
+   "probed_at": 1794933571.0564475
   },
   {
    "url": "https://testingyou-2dcac-default-rtdb.firebaseio.com",
@@ -52,7 +52,7 @@
    "schema": "action",
    "clients": 3,
    "online": 0,
-   "probed_at": 1794925501.975723
+   "probed_at": 1794933571.0313408
   },
   {
    "url": "https://siwanikumar923420-2e01f-default-rtdb.firebaseio.com",
@@ -60,7 +60,7 @@
    "schema": "command",
    "clients": 2,
    "online": 0,
-   "probed_at": 1794925513.421508
+   "probed_at": 1794933571.0470634
   },
   {
    "url": "https://godpanel-203f8-default-rtdb.asia-southeast1.firebasedatabase.app",
@@ -68,7 +68,7 @@
    "schema": "status",
    "clients": 1,
    "online": 0,
-   "probed_at": 1794925502.2077918
+   "probed_at": 1794933571.2658544
   }
  ],
  "dead": {
